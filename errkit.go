@@ -1,4 +1,4 @@
-// Package errkit 是面向 Go 1.22+ 的业务错误建模库。
+// Package errkit 是业务错误建模库。
 //
 // 设计原则: Identity (Kind) 与 Instance (Error) 分离。
 //
