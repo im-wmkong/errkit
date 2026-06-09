@@ -1,4 +1,4 @@
-module github.com/im-wmkong/errkit/ext/zap
+module github.com/im-wmkong/errkit/integration/zap
 
 go 1.23
 

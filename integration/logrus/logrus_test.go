@@ -9,7 +9,7 @@ import (
 	"github.com/im-wmkong/errkit"
 	grpcext "github.com/im-wmkong/errkit/ext/grpc"
 	httpext "github.com/im-wmkong/errkit/ext/http"
-	logrusext "github.com/im-wmkong/errkit/ext/logrus"
+	logrusext "github.com/im-wmkong/errkit/integration/logrus"
 	"github.com/sirupsen/logrus"
 )
 

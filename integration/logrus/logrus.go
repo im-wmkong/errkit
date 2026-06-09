@@ -7,9 +7,9 @@
 //	{"err.code":10001, "err.name":"user_not_found", "err.message":"...",
 //	 "err.attrs.uid":42, "err.http_status":404, "err.cause":"..."}
 //
-// 与 ext/slog / ext/zap / ext/zerolog 同构。logrus 没有原生 nested object
+// 与 ext/slog / integration/zap / integration/zerolog 同构。logrus 没有原生 nested object
 // 概念, 这里采用扁平 dot-key 风格输出, 与多数 logrus 用户的实践一致;
-// 想保持嵌套对象的请用 ext/slog / ext/zap / ext/zerolog。
+// 想保持嵌套对象的请用 ext/slog / integration/zap / integration/zerolog。
 package logrus
 
 import (

@@ -1,4 +1,4 @@
-package zap_test
+package zerolog_test
 
 import (
 	"bytes"
@@ -9,16 +9,9 @@ import (
 	"github.com/im-wmkong/errkit"
 	grpcext "github.com/im-wmkong/errkit/ext/grpc"
 	httpext "github.com/im-wmkong/errkit/ext/http"
-	zapext "github.com/im-wmkong/errkit/ext/zap"
-	"go.uber.org/zap"
-	"go.uber.org/zap/zapcore"
+	zerologext "github.com/im-wmkong/errkit/integration/zerolog"
+	"github.com/rs/zerolog"
 )
-
-func newJSONLogger(buf *bytes.Buffer) *zap.Logger {
-	enc := zapcore.NewJSONEncoder(zap.NewProductionEncoderConfig())
-	core := zapcore.NewCore(enc, zapcore.AddSync(buf), zapcore.DebugLevel)
-	return zap.New(core)
-}
 
 func TestErrFull(t *testing.T) {
 	r := errkit.NewRegistry()
@@ -28,9 +21,8 @@ func TestErrFull(t *testing.T) {
 	err = grpcext.Code(5)(err)
 
 	var buf bytes.Buffer
-	logger := newJSONLogger(&buf)
-	logger.Error("fail", zapext.Err(err))
-	_ = logger.Sync()
+	logger := zerolog.New(&buf)
+	logger.Error().Func(zerologext.Err(err)).Msg("fail")
 
 	out := buf.String()
 	for _, w := range []string{
@@ -50,10 +42,9 @@ func TestErrFull(t *testing.T) {
 
 func TestErrNil(t *testing.T) {
 	var buf bytes.Buffer
-	logger := newJSONLogger(&buf)
-	logger.Error("fail", zapext.Err(nil))
-	_ = logger.Sync()
+	logger := zerolog.New(&buf)
+	logger.Error().Func(zerologext.Err(nil)).Msg("fail")
 	if !strings.Contains(buf.String(), `"err":{}`) {
-		t.Fatalf("expected empty err object, got:\n%s", buf.String())
+		t.Fatalf("expected empty err dict, got:\n%s", buf.String())
 	}
 }

@@ -171,22 +171,33 @@ json.Marshal(err)
 JSON 输出**仅包含 core 字段**, 不含 HTTP/gRPC 等协议字段——后者由 ext 层处理 (例如 `slogext.Err`)。
 attrs 按插入顺序输出; 不可序列化的 attr 值 (如 `chan`) 会自动降级为字符串而非整条失败。
 
-## ext 子包
+## 扩展子包
 
-ext 通过**装饰器**包在错误链外面, **core 不感知任何协议**。新增协议字段零成本 (照抄 `ext/http` 模板即可)。
+errkit 把扩展按"是否引入外部依赖"分两层组织:
+
+- **`ext/`** — 协议装饰器, **零外部依赖**, 跟主 module 一起发布。
+  用来给错误链挂状态码 / telemetry 命名。
+- **`integration/`** — 三方框架重量集成, **每个独立 Go module**,
+  避免主 module 被无关依赖污染。
+
+### ext/* (零依赖装饰器, 主 module 内)
 
 | 包 | 用途 | API |
 |---|---|---|
-| `ext/http` | HTTP 状态码 | `Status(404)(err)` / `StatusOf(err)` |
-| `ext/grpc` | gRPC 状态码 | `Code(5)(err)` / `CodeOf(err)` |
-| `ext/otel` | telemetry 命名 | `Name("biz.x")(err)` / `NameOf(err)` |
-| `ext/slog` | log/slog 集成 | `Err(err)` / `Value(err)` |
-| `ext/zap` | go.uber.org/zap 集成 | `Err(err)` / `Object(key, err)` |
-| `ext/zerolog` | rs/zerolog 集成 | `Err(err)` / `Field(key, err)` / `Dict(err)` |
-| `ext/logrus` | sirupsen/logrus 集成 | `Fields(err)` / `FieldsWithPrefix(prefix, err)` |
+| `ext/http` | HTTP 状态码 + JSON 渲染 | `Status(404)(err)` / `StatusOf(err)` / `Render(w, err)` |
+| `ext/grpc` | gRPC 状态码 (不引 grpc) | `Code(5)(err)` / `CodeOf(err)` |
+| `ext/otel` | Telemetry 命名 (不引 OTel) | `Name("biz.x")(err)` / `NameOf(err)` |
+| `ext/slog` | log/slog 集成 (仅标准库) | `Err(err)` / `Value(err)` |
 
-> 日志类 ext (`slog` / `zap` / `zerolog` / `logrus`) **各自独立 module**, 用哪个 import 哪个,
-> 主 module 不会被无关日志库的依赖污染。
+### integration/* (各自独立 module, 各自拉重依赖)
+
+| Module | 用途 | API |
+|---|---|---|
+| `integration/grpc` | gRPC `*status.Status` 互转 + 拦截器 | `ToStatus(err)` / `FromStatus(st)` / `UnaryServerInterceptor()` / `UnaryClientInterceptor()` |
+| `integration/otel` | 把 errkit 字段写到 OTel span | `RecordError(span, err)` / `Attributes(err)` |
+| `integration/zap` | go.uber.org/zap | `Err(err)` / `Object(key, err)` |
+| `integration/zerolog` | rs/zerolog | `Err(err)` / `Field(key, err)` / `Dict(err)` |
+| `integration/logrus` | sirupsen/logrus | `Fields(err)` / `FieldsWithPrefix(prefix, err)` |
 
 日志库示例:
 

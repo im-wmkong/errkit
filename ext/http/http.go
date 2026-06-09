@@ -11,7 +11,13 @@
 // errors.As 自然能找到它, errors.Is 自然能穿透它。
 package http
 
-import "errors"
+import (
+	"encoding/json"
+	"errors"
+	"net/http"
+
+	"github.com/im-wmkong/errkit"
+)
 
 // withStatus 是装饰器产生的具体错误; 不导出, 强制走构造函数。
 type withStatus struct {
@@ -43,4 +49,52 @@ func StatusOf(err error) (int, bool) {
 		return s.HTTPStatus(), true
 	}
 	return 0, false
+}
+
+// Body 是 Render 写入响应体的形状; 只暴露给客户端的安全字段,
+// 不含 cause / attrs (那是服务端日志的事)。
+type Body struct {
+	Code    uint32 `json:"code,omitempty"`
+	Name    string `json:"name,omitempty"`
+	Message string `json:"message"`
+}
+
+// BodyOf 把 errkit 错误抽成 Body, 适合自定义渲染时机/形状的场景:
+//
+//	b := httpext.BodyOf(err)
+//	b.Message = i18n.T(b.Name)        // 比如做翻译
+//	json.NewEncoder(w).Encode(b)
+func BodyOf(err error) Body {
+	if err == nil {
+		return Body{}
+	}
+	b := Body{Message: errkit.MessageOf(err)}
+	if c, ok := errkit.CodeOf(err); ok {
+		b.Code = uint32(c)
+	}
+	if n, ok := errkit.NameOf(err); ok {
+		b.Name = n
+	}
+	return b
+}
+
+// Render 把 err 统一写到 ResponseWriter:
+//   - status: ext/http 装饰; 没有则 500
+//   - Content-Type: application/json; charset=utf-8
+//   - body: BodyOf(err) 的 JSON
+//
+// 故意不做日志: 调用方决定用 slog/zap/zerolog/logrus 哪一个。
+//
+//	if err := getUser(id); err != nil {
+//	    httpext.Render(w, err)
+//	    return
+//	}
+func Render(w http.ResponseWriter, err error) {
+	status := http.StatusInternalServerError
+	if c, ok := StatusOf(err); ok {
+		status = c
+	}
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	w.WriteHeader(status)
+	_ = json.NewEncoder(w).Encode(BodyOf(err))
 }

@@ -171,22 +171,33 @@ json.Marshal(err)
 JSON output **only contains core fields**, never protocol fields like HTTP / gRPC — those are handled by the ext layer (e.g. `slogext.Err`).
 Attrs are emitted in insertion order; an attr value that can't be serialized (e.g. `chan`) is downgraded to a string instead of failing the whole marshal.
 
-## ext Subpackages
+## Extensions
 
-ext wraps decorators around the error chain; **core stays protocol-agnostic**. Adding a new protocol field is essentially free — copy the `ext/http` template.
+errkit organizes extensions into two layers:
+
+- **`ext/`** — protocol decorators with **zero external dependencies**. Always available
+  inside the main module. Use to attach status codes / telemetry names to the error chain.
+- **`integration/`** — heavy integrations with third-party frameworks. Each lives in its
+  **own Go module**, so the main module stays free of unrelated dependencies.
+
+### ext/* (zero-dep decorators, in main module)
 
 | Package | Purpose | API |
 |---|---|---|
-| `ext/http` | HTTP status code | `Status(404)(err)` / `StatusOf(err)` |
-| `ext/grpc` | gRPC status code | `Code(5)(err)` / `CodeOf(err)` |
-| `ext/otel` | telemetry naming | `Name("biz.x")(err)` / `NameOf(err)` |
-| `ext/slog` | log/slog integration | `Err(err)` / `Value(err)` |
-| `ext/zap` | go.uber.org/zap integration | `Err(err)` / `Object(key, err)` |
-| `ext/zerolog` | rs/zerolog integration | `Err(err)` / `Field(key, err)` / `Dict(err)` |
-| `ext/logrus` | sirupsen/logrus integration | `Fields(err)` / `FieldsWithPrefix(prefix, err)` |
+| `ext/http` | HTTP status code + JSON renderer | `Status(404)(err)` / `StatusOf(err)` / `Render(w, err)` |
+| `ext/grpc` | gRPC status code (no grpc dep) | `Code(5)(err)` / `CodeOf(err)` |
+| `ext/otel` | Telemetry name (no OTel dep) | `Name("biz.x")(err)` / `NameOf(err)` |
+| `ext/slog` | log/slog integration (stdlib only) | `Err(err)` / `Value(err)` |
 
-> The logging ext packages (`slog` / `zap` / `zerolog` / `logrus`) live in **separate Go modules**.
-> Import only the one you use; the main module is never polluted by unrelated logging dependencies.
+### integration/* (separate modules, each pulls its own deps)
+
+| Module | Purpose | API |
+|---|---|---|
+| `integration/grpc` | gRPC `*status.Status` round-trip + interceptors | `ToStatus(err)` / `FromStatus(st)` / `UnaryServerInterceptor()` / `UnaryClientInterceptor()` |
+| `integration/otel` | Write errkit fields onto OTel spans | `RecordError(span, err)` / `Attributes(err)` |
+| `integration/zap` | go.uber.org/zap | `Err(err)` / `Object(key, err)` |
+| `integration/zerolog` | rs/zerolog | `Err(err)` / `Field(key, err)` / `Dict(err)` |
+| `integration/logrus` | sirupsen/logrus | `Fields(err)` / `FieldsWithPrefix(prefix, err)` |
 
 Logger snippets:
 

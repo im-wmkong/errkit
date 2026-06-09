@@ -1,4 +1,4 @@
-module github.com/im-wmkong/errkit/ext/logrus
+module github.com/im-wmkong/errkit/integration/logrus
 
 go 1.23
 

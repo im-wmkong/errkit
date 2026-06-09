@@ -7,13 +7,12 @@
 //
 // 关键点:
 //   - 业务层只产 errkit 错误 + ext/http 装饰, 不直接碰 ResponseWriter。
-//   - render 是唯一的"协议出口", 决定 status code 与响应体形状。
-//   - 响应体只暴露 code/name/message, 不暴露 cause/attrs, 避免泄漏内部信息。
+//   - httpext.Render 是协议出口, 决定 status + body 形状, 只暴露 code/name/message。
+//   - 服务端日志保留全部信息 (含 cause/attrs), 由 slogext 处理。
 package main
 
 import (
 	stderrors "errors"
-	"encoding/json"
 	"log/slog"
 	"net/http"
 	"os"
@@ -38,7 +37,6 @@ var (
 
 var errNoRows = stderrors.New("sql: no rows in result set")
 
-// fakeDB 模拟一次 DB 查询。
 func fakeDB(id int64) error {
 	if id == 999 {
 		return errNoRows
@@ -65,41 +63,12 @@ func getUser(id int64) error {
 	return nil
 }
 
-// errorBody 是给客户端看的最小响应体, 不含 cause / attrs。
-type errorBody struct {
-	Code    uint32 `json:"code"`
-	Name    string `json:"name"`
-	Message string `json:"message"`
-}
-
-// render 是统一错误出口: 写 status, 写 JSON, 顺手记一条结构化日志。
-func render(w http.ResponseWriter, logger *slog.Logger, err error) {
-	status := http.StatusInternalServerError
-	if c, ok := httpext.StatusOf(err); ok {
-		status = c
-	}
-
-	body := errorBody{Message: errkit.MessageOf(err)}
-	if c, ok := errkit.CodeOf(err); ok {
-		body.Code = uint32(c)
-	}
-	if n, ok := errkit.NameOf(err); ok {
-		body.Name = n
-	}
-
-	w.Header().Set("Content-Type", "application/json; charset=utf-8")
-	w.WriteHeader(status)
-	_ = json.NewEncoder(w).Encode(body)
-
-	// 服务端日志保留全部信息 (含 cause/attrs); slogext 已封装。
-	logger.Error("request failed", slogext.Err(err))
-}
-
 func handleUser(logger *slog.Logger) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		id, _ := strconv.ParseInt(r.URL.Query().Get("id"), 10, 64)
 		if err := getUser(id); err != nil {
-			render(w, logger, err)
+			logger.Error("request failed", slogext.Err(err)) // 服务端: 全量
+			httpext.Render(w, err)                            // 客户端: 安全字段
 			return
 		}
 		w.Header().Set("Content-Type", "application/json; charset=utf-8")

@@ -1,4 +1,4 @@
-module github.com/im-wmkong/errkit/ext/zerolog
+module github.com/im-wmkong/errkit/integration/zerolog
 
 go 1.23
 

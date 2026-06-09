@@ -7,7 +7,7 @@
 //	{"err": {"code":10001,"name":"user_not_found","message":"...",
 //	         "attrs":{"uid":42},"http_status":404,"cause":"..."}}
 //
-// 与 ext/slog / ext/zap 同构, 故意做成显式调用, 避免 core 隐式依赖日志格式。
+// 与 ext/slog / integration/zap 同构, 故意做成显式调用, 避免 core 隐式依赖日志格式。
 package zerolog
 
 import (
