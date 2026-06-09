@@ -4,6 +4,51 @@
 
 ## [Unreleased]
 
+## [0.1.3] - 2026-06-09
+
+### Changed
+
+- **BREAKING**: 项目从 `errkit` 重命名为 `errkind`
+  - 模块路径由 `github.com/im-wmkong/errkit` 调整为 `github.com/im-wmkong/errkind`
+  - 文件 `errkit.go` / `errkit_test.go` / `errkit_bench_test.go` 重命名为 `errkind.{go,_test.go,_bench_test.go}`
+  - README / 示例 / 集成包内的导入路径与标识符同步更新
+
+### Fixed
+
+- `integration/grpc`: 修正业务码 (business code) 注释前缀, 避免 godoc 渲染异常
+
+## [0.1.2] - 2026-06-09
+
+### Added
+
+#### integration (端到端集成包, 各自独立 go.mod)
+
+- `integration/grpc`: gRPC 服务端拦截器与状态码映射, 把 `*Kind` / `*kerr` 转成 `status.Status`, 携带业务码与 attrs
+- `integration/otel`: OpenTelemetry 集成, 在 span 上记录错误码、名称、attrs, 支持 `RecordError`
+- `integration/logrus`: Logrus Hook / Field 适配, 自动展开错误结构化字段
+- `integration/zap`: Zap Field 适配, 零反射展开 attrs
+- `integration/zerolog`: Zerolog Event 适配, 输出 code / name / attrs / cause
+
+#### examples
+
+- `examples/http`: 基于标准库 `net/http` 的最小服务示例, 演示 `ext/http.Status` + `ext/slog`
+- `examples/grpc`: gRPC 服务端示例, 演示业务码与 `status.Status` 的转换
+
+#### 文档
+
+- 新增 `README_CN.md` 中文版 README
+- README 增补主流日志库 (logrus / zap / zerolog) 集成示例与对比说明
+
+### Changed
+
+- CI workflow 增强: 扩展矩阵, 加入对 `integration/*` 子模块的独立构建与测试
+
+## [0.1.1] - 2026-06-08
+
+### Changed
+
+- 调整 `errkit` 包顶层 doc comment, 更清晰地表达项目定位
+
 ## [0.1.0] - 2026-06-08
 
 首个公开版本。**API 处于 v0.x 阶段, 后续小版本可能存在不兼容变更。**
@@ -57,5 +102,8 @@
 - 暂未提供错误码冲突的静态检查工具 (规划在 v0.x)
 - 暂未提供 i18n / metrics 自动发射 (规划在 v0.x)
 
-[Unreleased]: https://github.com/im-wmkong/errkind/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/im-wmkong/errkind/compare/v0.1.3...HEAD
+[0.1.3]: https://github.com/im-wmkong/errkind/compare/v0.1.2...v0.1.3
+[0.1.2]: https://github.com/im-wmkong/errkind/compare/v0.1.1...v0.1.2
+[0.1.1]: https://github.com/im-wmkong/errkind/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/im-wmkong/errkind/releases/tag/v0.1.0
