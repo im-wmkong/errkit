@@ -34,7 +34,7 @@ var Domain = "errkind"
 // metaCodeKey 是 ErrorInfo.Metadata 中携带 errkind business code 的特殊 key。
 //
 // 设计取舍: errdetails 标准 Detail 类型里没有"业务码"语义,
-// 借 Metadata 走一个保留前缀; "_errkit." 这个前缀业务自定义 attr 通常不会撞。
+// 借 Metadata 走一个保留前缀; "_errkind." 这个前缀业务自定义 attr 通常不会撞。
 const metaCodeKey = "_errkind.code"
 
 // ToStatus 把 errkind 错误映射为 *status.Status:
@@ -43,7 +43,7 @@ const metaCodeKey = "_errkind.code"
 //   - details  <- ErrorInfo{
 //     Reason: errkind Kind name,
 //     Domain: Domain,
-//     Metadata: AllAttrs + {_errkit.code: <business code>},
+//     Metadata: AllAttrs + {_errkind.code: <business code>},
 //     }
 //
 // nil 入参返回 nil。
@@ -215,7 +215,7 @@ var _ RemoteError = (*remoteErr)(nil)
 func (e *remoteErr) Error() string                      { return e.message }
 func (e *remoteErr) GRPCCode() uint32                   { return e.grpcCode }
 func (e *remoteErr) RemoteName() string                 { return e.name }
-func (e *remoteErr) RemoteAttrs() []errkind.Attr         { return append([]errkind.Attr(nil), e.attrs...) }
+func (e *remoteErr) RemoteAttrs() []errkind.Attr        { return append([]errkind.Attr(nil), e.attrs...) }
 func (e *remoteErr) RemoteBusinessCode() (uint32, bool) { return e.businessCode, e.hasBusiness }
 
 // UnaryServerInterceptor 在服务端把任意 errkind 错误转成 gRPC status, 客户端就能拿到 ErrorInfo。
