@@ -4,7 +4,7 @@
 [![CI](https://github.com/im-wmkong/errkind/actions/workflows/ci.yml/badge.svg)](https://github.com/im-wmkong/errkind/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
-> 一个面向 Go 1.24+ 的**业务错误建模库** —— 核心是错误的 *领域模型* (Kind 身份 / 实例分离, 零依赖)。
+> 一个面向 Go 1.24+ 的**业务错误建模库** —— 核心是错误的 *领域模型* (Kind 身份 / 实例分离, 零依赖)。<br>
 > 协议适配 (HTTP / gRPC / OTel) 与日志库整合 (zap / zerolog / logrus) 由独立的 `ext/` 装饰器与 `integration/*` 子模块提供, 各自按需引入。
 
 简体中文 | [English](README.md)
