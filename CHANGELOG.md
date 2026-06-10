@@ -4,6 +4,21 @@
 
 ## [Unreleased]
 
+### Changed
+
+#### BREAKING — toolchain 版本基线上调
+
+- 整仓 7 个 module (主 module + `integration/{grpc,otel,zap,zerolog,logrus}` + `examples/grpc`) 的 `go` directive 统一从 `1.23` 升到 `1.24.0`, 老用户使用 Go 1.23 将无法编译
+  - 触发因素: `integration/grpc` 升 `google.golang.org/grpc` v1.66.0 → **v1.79.3** 修复 GO-2026-4762 (`:path` 缺前导斜杠致鉴权绕过), 而 grpc v1.79+ 强制要求 `go >= 1.24.0`
+  - 决策取舍: 与其只升 `integration/grpc` 一个 module 造成版本碎片化, 不如整仓统一基线, 让所有 module 的 toolchain 行为一致, 也方便 CI 单一版本矩阵
+- CI 矩阵下限同步上调: `1.23.x / 1.24.x / 1.25.x` → `1.24.x / 1.25.x`; coverage-gate 与 staticcheck 的 `go-version` 由 `1.23.x` 升到 `1.24.x`
+- README 顶部一行 slogan 重写: 不再用"不是 X 库"的反向澄清 (与 `integration/grpc` 完整闭环现状有张力), 改为正面描述"核心是错误的领域模型 + 协议适配 / 日志整合按需引入"
+
+#### 其他
+
+- `examples/grpc` 拆分为 `server.go` / `client.go` / `main.go` 三文件, 主入口仅做协调, 业务/拨号逻辑各归其位
+- README 性能表基于 Go 1.24 + Apple M4 Pro 重新跑分并更新数字 (大部分指标比 1.23 略快或显著快, 内存分配数不变)
+
 ### Added
 
 #### tooling (错误码工程化工具链)
@@ -30,10 +45,14 @@
 #### CI / 工程
 
 - workflow 新增 `errkindlint` 自检步骤; 覆盖整仓 (跨 `go.mod`), 防止重复错误码流入主干
-- 覆盖率 gate 排除 `cmd/` 目录 (CLI 入口无业务逻辑)
+- 覆盖率 gate 同时排除 `cmd/` (CLI 入口)、`internal/` (工具链支持代码)、`examples/` (演示代码), 三者都不属于"用户使用的核心库 API"; 修正后核心覆盖率 ≥ 90% 阈值仍稳定通过 (本地实测 97.5%)
 - 新增 `scripts/test.sh`: 遍历仓内全部 `go.mod`, 串行跑 `go vet` / `go build` / `go test`, 让本地一行命令复刻 CI 的多 module 行为 (兼容 macOS 自带 bash 3.2)
 - `scripts/test.sh` 增加 `--group` 选项, 在每个 module 前后发射 `::group::` / `::endgroup::`; CI workflow 的 vet / build / test 三段循环合并为一行 `./scripts/test.sh --group -race`, 与本地行为完全一致, 单一事实源, 避免双份维护漂移
-- `examples/grpc` 拆分为 `server.go` / `client.go` / `main.go` 三文件, 主入口仅做协调, 业务/拨号逻辑各归其位
+- 修正 `scripts/test.sh` git 索引 mode 为 100755, 让 CI checkout 后能直接执行
+
+### Security
+
+- 修复 GO-2026-4762: gRPC-Go 通过缺失 `:path` 前导斜杠致鉴权绕过, 通过升 `google.golang.org/grpc` 至 v1.79.3 解决 (影响范围: `integration/grpc` 与 `examples/grpc`)
 
 ## [0.1.3] - 2026-06-09
 
