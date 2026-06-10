@@ -4,6 +4,37 @@
 
 ## [Unreleased]
 
+### Added
+
+#### tooling (错误码工程化工具链)
+
+- `cmd/errkindlint`: 静态扫描 `errkind.Define` 调用, 在编译期 (而非 init 期) 检出重复 code / 重复 name / 空 name; 发现冲突退出码非零, 可直接接入 CI
+  - 支持 `-exclude=glob` 过滤 (例: `-exclude=examples/`)
+  - 支持 Go 风格的 `./...` 路径
+- `cmd/errkind doc`: 基于源码静态分析生成错误码文档, 跨团队对齐错误码契约
+  - `-format=md` 输出 Markdown 表格 (含 code / name / 默认消息 / 源位置)
+  - `-format=json` 输出结构化 JSON, 可喂给前端 codegen / SRE 告警平台
+  - `-o=file` 写入文件, 默认 stdout
+- `internal/scan`: 共享的 AST 扫描层, lint 与 doc 复用同一份解析结果, 仅识别字面量参数, 跳过 `_test.go` / `vendor` / `testdata`; 基于目录递归, 天然跨 `go.mod` 边界, 一次扫到主模块 + `integration/*` 全部源码
+
+#### integration/grpc (流式与稳定性增强)
+
+- 新增 `StreamServerInterceptor()` / `StreamClientInterceptor()`, 支持 server-streaming / client-streaming / bidi: 服务端 handler 返回的 errkind 错误自动 `ToStatus`, 客户端 `RecvMsg` / `SendMsg` / `CloseSend` 拿到的 status 自动 `FromStatus`
+- `ToStatus` 把 attrs 插入序编码进 `_errkind.order` metadata, `FromStatus` 按此还原, 解决 `map[string]string` 序列化丢序问题; 客户端无 order 字段时按 key 字典序兜底, 保证跨调用稳定
+- `*remoteErr` 实现 `GRPCStatus()`, 让 `status.FromError(err)` 能从客户端还原出的错误反向取回原 `*status.Status`, 不破坏 grpc 互操作约定
+
+#### examples
+
+- `examples/grpc` 升级为基于 `bufconn` 的 in-process server + client 完整闭环: 注册服务端 / 客户端 unary 拦截器, 通过真实 gRPC 调用演示业务码 / Kind name / attrs / grpc code 跨进程透传; 客户端用 `grpcint.IsReason` / `grpcint.CodeOf` / `grpcext.CodeOf` 做分支判断
+
+#### CI / 工程
+
+- workflow 新增 `errkindlint` 自检步骤; 覆盖整仓 (跨 `go.mod`), 防止重复错误码流入主干
+- 覆盖率 gate 排除 `cmd/` 目录 (CLI 入口无业务逻辑)
+- 新增 `scripts/test.sh`: 遍历仓内全部 `go.mod`, 串行跑 `go vet` / `go build` / `go test`, 让本地一行命令复刻 CI 的多 module 行为 (兼容 macOS 自带 bash 3.2)
+- `scripts/test.sh` 增加 `--group` 选项, 在每个 module 前后发射 `::group::` / `::endgroup::`; CI workflow 的 vet / build / test 三段循环合并为一行 `./scripts/test.sh --group -race`, 与本地行为完全一致, 单一事实源, 避免双份维护漂移
+- `examples/grpc` 拆分为 `server.go` / `client.go` / `main.go` 三文件, 主入口仅做协调, 业务/拨号逻辑各归其位
+
 ## [0.1.3] - 2026-06-09
 
 ### Changed
@@ -99,7 +130,7 @@
 ### Known limitations
 
 - `errors.Is(err, kind)` **不支持** (`*Kind` 不实现 `error`); 请用 `kind.Is(err)` 或 `errkind.CodeOf(err)`
-- 暂未提供错误码冲突的静态检查工具 (规划在 v0.x)
+- ~~暂未提供错误码冲突的静态检查工具 (规划在 v0.x)~~ — 已在 Unreleased 提供 `cmd/errkindlint`
 - 暂未提供 i18n / metrics 自动发射 (规划在 v0.x)
 
 [Unreleased]: https://github.com/im-wmkong/errkind/compare/v0.1.3...HEAD

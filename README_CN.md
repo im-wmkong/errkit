@@ -193,7 +193,7 @@ errkind 把扩展按"是否引入外部依赖"分两层组织:
 
 | Module | 用途 | API |
 |---|---|---|
-| `integration/grpc` | gRPC `*status.Status` 互转 + 拦截器 | `ToStatus(err)` / `FromStatus(st)` / `UnaryServerInterceptor()` / `UnaryClientInterceptor()` |
+| `integration/grpc` | gRPC `*status.Status` 互转 + 拦截器 (unary 与 streaming) | `ToStatus(err)` / `FromStatus(st)` / `UnaryServerInterceptor()` / `UnaryClientInterceptor()` / `StreamServerInterceptor()` / `StreamClientInterceptor()` |
 | `integration/otel` | 把 errkind 字段写到 OTel span | `RecordError(span, err)` / `Attributes(err)` |
 | `integration/zap` | go.uber.org/zap | `Err(err)` / `Object(key, err)` |
 | `integration/zerolog` | rs/zerolog | `Err(err)` / `Field(key, err)` / `Dict(err)` |
@@ -211,6 +211,47 @@ logger.Error().Func(zerologext.Err(err)).Msg("request failed")
 // logrus
 logger.WithFields(logrusext.Fields(err)).Error("request failed")
 ```
+
+## 工具链
+
+errkind 提供两个 CLI, 用来在跨团队场景下保证错误码契约一致。
+
+### `cmd/errkindlint` — 错误码冲突静态检查
+
+`Define` 在进程 init 阶段会对重复的 `(code, name)` panic, 但那是运行时。
+`errkindlint` 把这层校验前置到编译期: 对整仓 (跨多个 `go.mod`) 的源码做 AST 扫描,
+识别 `errkind.Define(...)` 字面量调用并检测冲突。
+
+```bash
+go run github.com/im-wmkong/errkind/cmd/errkindlint -exclude=examples/ .
+```
+
+- 报告重复 `code` / 重复 `name` / 空 `name`
+- 发现冲突退出码非零, 直接接入 CI gate
+- `-exclude=glob` 跳过文件 (例如各自独立可运行的 demo, 故意复用错误码)
+- 支持 Go 风格的 `./...` 路径
+
+### `cmd/errkind doc` — 错误码文档生成
+
+基于源码静态分析生成稳定的错误码目录, 给前端文案、SRE 告警、客户端 codegen 用。
+
+```bash
+go run github.com/im-wmkong/errkind/cmd/errkind doc -format=md  ./...
+go run github.com/im-wmkong/errkind/cmd/errkind doc -format=json ./...
+go run github.com/im-wmkong/errkind/cmd/errkind doc -format=md -o errors.md ./...
+```
+
+Markdown 输出片段:
+
+```
+| Code  | Name             | Default Message | Source                |
+|------:|------------------|-----------------|-----------------------|
+| 10001 | `user_not_found` | 用户不存在        | user/errors.go:12     |
+| 10002 | `invalid_argument` | 参数非法        | user/errors.go:18     |
+```
+
+两个工具共享 `internal/scan` (纯 AST, 不需要 `init` 真实执行),
+即使代码无法编译或带重依赖也能工作。
 
 ## 与其他库的对比
 
@@ -251,6 +292,19 @@ Apple M-series, Go 1.23, `go test -bench=. -benchtime=2s`:
 | `json.Marshal(err)` | 817 | 448 | 15 |
 
 跑你自己的环境: `go test -bench=. -benchmem ./...`
+
+## 开发
+
+仓库是多 module 工程 (主 module + 每个 `integration/*` 各自 `go.mod`)。
+`go test ./...` **不会跨 module 边界**, 用脚本一键复刻 CI 行为:
+
+```bash
+./scripts/test.sh             # 全部 module 跑 vet / build / test
+./scripts/test.sh -race       # 透传给 go test
+./scripts/test.sh --group     # 发射 GitHub Actions ::group:: 标记 (CI 用)
+```
+
+CI test job 直接调这同一个脚本, 单一事实源 —— 本地绿则 CI 这一步绿。
 
 ## 已知行为说明
 

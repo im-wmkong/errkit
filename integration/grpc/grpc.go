@@ -18,6 +18,7 @@ package grpc
 import (
 	"context"
 	"fmt"
+	"sort"
 	"strconv"
 
 	"github.com/im-wmkong/errkind"
@@ -36,6 +37,10 @@ var Domain = "errkind"
 // 设计取舍: errdetails 标准 Detail 类型里没有"业务码"语义,
 // 借 Metadata 走一个保留前缀; "_errkind." 这个前缀业务自定义 attr 通常不会撞。
 const metaCodeKey = "_errkind.code"
+
+// metaOrderKey 把服务端 attrs 的插入顺序编码进 metadata, 客户端按此顺序还原,
+// 以保证 attrs 的"按插入序"承诺跨网络也成立; 没有该 key 时客户端兜底按 key 字典序。
+const metaOrderKey = "_errkind.order"
 
 // ToStatus 把 errkind 错误映射为 *status.Status:
 //   - code     <- ext/grpc 装饰; 没有则 codes.Unknown
@@ -64,8 +69,20 @@ func ToStatus(err error) *status.Status {
 	if bc, ok := errkind.CodeOf(err); ok {
 		info.Metadata[metaCodeKey] = strconv.FormatUint(uint64(bc), 10)
 	}
-	for _, kv := range errkind.AllAttrs(err) {
-		info.Metadata[kv.Key] = fmt.Sprint(kv.Val)
+	attrs := errkind.AllAttrs(err)
+	if len(attrs) > 0 {
+		order := make([]string, 0, len(attrs))
+		seen := map[string]struct{}{}
+		for _, kv := range attrs {
+			if _, dup := seen[kv.Key]; dup {
+				// AllAttrs 已经做了去重 (外层覆盖内层), 这里防御性兜底; 不破坏外层值。
+				continue
+			}
+			seen[kv.Key] = struct{}{}
+			info.Metadata[kv.Key] = fmt.Sprint(kv.Val)
+			order = append(order, kv.Key)
+		}
+		info.Metadata[metaOrderKey] = encodeOrder(order)
 	}
 	if d, derr := st.WithDetails(info); derr == nil {
 		return d
@@ -82,6 +99,9 @@ func ToStatus(err error) *status.Status {
 //
 // 注意: 还原出来的错误 *不* 等价于服务端原始 *kerr (没有共享 Kind 身份);
 // 若要按 Kind 判等, 应该用 client 自己定义的 Kind + 本包 IsReason。
+//
+// attrs 顺序: 优先按服务端编码的 _errkind.order 还原; 缺失时按 key 字典序兜底,
+// 这样不同次调用的同一错误在客户端遍历顺序稳定。
 func FromStatus(st *status.Status) error {
 	if st == nil || st.Code() == codes.OK {
 		return nil
@@ -95,16 +115,7 @@ func FromStatus(st *status.Status) error {
 	for _, d := range st.Details() {
 		if info, ok := d.(*errdetails.ErrorInfo); ok {
 			reason = info.Reason
-			for k, v := range info.Metadata {
-				if k == metaCodeKey {
-					if n, perr := strconv.ParseUint(v, 10, 32); perr == nil {
-						businessCode = uint32(n)
-						hasBusiness = true
-					}
-					continue
-				}
-				attrs = append(attrs, errkind.Attr{Key: k, Val: v})
-			}
+			attrs = decodeAttrs(info.Metadata, &businessCode, &hasBusiness)
 			break
 		}
 	}
@@ -115,8 +126,48 @@ func FromStatus(st *status.Status) error {
 		hasBusiness:  hasBusiness,
 		name:         reason,
 		attrs:        attrs,
+		status:       st,
 	}
 }
+
+// decodeAttrs 从 metadata 中过滤掉 _errkind.* 保留 key, 按 _errkind.order 编排剩余 attrs;
+// 没有 order 时按 key 字典序兜底, 业务可读且跨调用稳定。
+func decodeAttrs(meta map[string]string, businessCode *uint32, hasBusiness *bool) []errkind.Attr {
+	if len(meta) == 0 {
+		return nil
+	}
+	if v, ok := meta[metaCodeKey]; ok {
+		if n, perr := strconv.ParseUint(v, 10, 32); perr == nil {
+			*businessCode = uint32(n)
+			*hasBusiness = true
+		}
+	}
+	order := decodeOrder(meta[metaOrderKey])
+	if len(order) == 0 {
+		// 兜底: 按 key 字典序, 但跳过保留 key。
+		for k := range meta {
+			if isReservedKey(k) {
+				continue
+			}
+			order = append(order, k)
+		}
+		sort.Strings(order)
+	}
+	out := make([]errkind.Attr, 0, len(order))
+	for _, k := range order {
+		if isReservedKey(k) {
+			continue
+		}
+		v, ok := meta[k]
+		if !ok {
+			continue
+		}
+		out = append(out, errkind.Attr{Key: k, Val: v})
+	}
+	return out
+}
+
+func isReservedKey(k string) bool { return k == metaCodeKey || k == metaOrderKey }
 
 // IsReason 检查 err 是否来自远端的某个 ErrorInfo.Reason (即 errkind Kind name)。
 //
@@ -199,7 +250,8 @@ func asRemote(err error) (RemoteError, bool) {
 //
 // 故意不冒充 *kerr (errkind 内部 extract 只认 *kerr 私有类型),
 // 而是通过 RemoteError 接口被本包 helper 识别。
-// GRPCCode 让 grpcext.CodeOf 直接可用。
+// GRPCCode 让 grpcext.CodeOf 直接可用; GRPCStatus 让 status.FromError 还原为同一个 status;
+// Unwrap 暂返回 nil (没有可还原的"内部 cause", 否则要再编码一层 errdetails)。
 type remoteErr struct {
 	message      string
 	grpcCode     uint32
@@ -207,6 +259,7 @@ type remoteErr struct {
 	hasBusiness  bool
 	name         string
 	attrs        []errkind.Attr
+	status       *status.Status
 }
 
 // 编译期断言: remoteErr 必须满足 RemoteError 契约。
@@ -217,6 +270,40 @@ func (e *remoteErr) GRPCCode() uint32                   { return e.grpcCode }
 func (e *remoteErr) RemoteName() string                 { return e.name }
 func (e *remoteErr) RemoteAttrs() []errkind.Attr        { return append([]errkind.Attr(nil), e.attrs...) }
 func (e *remoteErr) RemoteBusinessCode() (uint32, bool) { return e.businessCode, e.hasBusiness }
+
+// GRPCStatus 让 google.golang.org/grpc/status.FromError 仍然能精确还原 *status.Status,
+// 业务在客户端拿到 remoteErr 也能继续 status.Convert(err).Details() 自取。
+func (e *remoteErr) GRPCStatus() *status.Status { return e.status }
+
+// encodeOrder 把 attrs key 列表用 \x1f (Unit Separator) 拼接;
+// 选 \x1f 是因为它不会出现在合法的 attr key 里, 也不会被 protobuf metadata 转义。
+func encodeOrder(keys []string) string {
+	if len(keys) == 0 {
+		return ""
+	}
+	out := keys[0]
+	for _, k := range keys[1:] {
+		out += "\x1f" + k
+	}
+	return out
+}
+
+// decodeOrder 是 encodeOrder 的逆操作; 空串视作"没有顺序信息"。
+func decodeOrder(s string) []string {
+	if s == "" {
+		return nil
+	}
+	var out []string
+	start := 0
+	for i := 0; i < len(s); i++ {
+		if s[i] == '\x1f' {
+			out = append(out, s[start:i])
+			start = i + 1
+		}
+	}
+	out = append(out, s[start:])
+	return out
+}
 
 // UnaryServerInterceptor 在服务端把任意 errkind 错误转成 gRPC status, 客户端就能拿到 ErrorInfo。
 //
@@ -255,4 +342,66 @@ func UnaryClientInterceptor() grpcsdk.UnaryClientInterceptor {
 		}
 		return err
 	}
+}
+
+// StreamServerInterceptor 与 UnaryServerInterceptor 对应, 用于 server-streaming /
+// client-streaming / bidi: 把 handler 返回的 errkind 错误统一转成 *status.Status。
+//
+//	srv := grpcsdk.NewServer(
+//	    grpcsdk.StreamInterceptor(grpcint.StreamServerInterceptor()),
+//	)
+func StreamServerInterceptor() grpcsdk.StreamServerInterceptor {
+	return func(srv any, ss grpcsdk.ServerStream, info *grpcsdk.StreamServerInfo, handler grpcsdk.StreamHandler) error {
+		err := handler(srv, ss)
+		if err == nil {
+			return nil
+		}
+		if _, isStatus := err.(interface{ GRPCStatus() *status.Status }); isStatus {
+			return err
+		}
+		return ToStatus(err).Err()
+	}
+}
+
+// StreamClientInterceptor 与 UnaryClientInterceptor 对应:
+// 在 NewStream 失败 / RecvMsg 失败时把 status 还原成 errkind-friendly 错误。
+//
+//	conn, _ := grpcsdk.NewClient(addr,
+//	    grpcsdk.WithStreamInterceptor(grpcint.StreamClientInterceptor()),
+//	)
+func StreamClientInterceptor() grpcsdk.StreamClientInterceptor {
+	return func(ctx context.Context, desc *grpcsdk.StreamDesc, cc *grpcsdk.ClientConn, method string, streamer grpcsdk.Streamer, opts ...grpcsdk.CallOption) (grpcsdk.ClientStream, error) {
+		cs, err := streamer(ctx, desc, cc, method, opts...)
+		if err != nil {
+			if st, ok := status.FromError(err); ok {
+				return nil, FromStatus(st)
+			}
+			return nil, err
+		}
+		return &errkindClientStream{ClientStream: cs}, nil
+	}
+}
+
+// errkindClientStream 包装 grpcsdk.ClientStream, 把 SendMsg / RecvMsg / CloseSend
+// 返回的 status 错误透明地映射成 errkind-friendly 错误; io.EOF 等非 status 错误原样返回。
+//
+// Header() / Trailer() / Context() 不需要重写: 它们不返回业务 status 错误。
+type errkindClientStream struct {
+	grpcsdk.ClientStream
+}
+
+func (s *errkindClientStream) SendMsg(m any) error { return mapStreamErr(s.ClientStream.SendMsg(m)) }
+func (s *errkindClientStream) RecvMsg(m any) error { return mapStreamErr(s.ClientStream.RecvMsg(m)) }
+func (s *errkindClientStream) CloseSend() error    { return mapStreamErr(s.ClientStream.CloseSend()) }
+
+func mapStreamErr(err error) error {
+	if err == nil {
+		return nil
+	}
+	if _, isStatus := err.(interface{ GRPCStatus() *status.Status }); isStatus {
+		if st, ok := status.FromError(err); ok {
+			return FromStatus(st)
+		}
+	}
+	return err
 }

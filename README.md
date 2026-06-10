@@ -193,7 +193,7 @@ errkind organizes extensions into two layers:
 
 | Module | Purpose | API |
 |---|---|---|
-| `integration/grpc` | gRPC `*status.Status` round-trip + interceptors | `ToStatus(err)` / `FromStatus(st)` / `UnaryServerInterceptor()` / `UnaryClientInterceptor()` |
+| `integration/grpc` | gRPC `*status.Status` round-trip + interceptors (unary & streaming) | `ToStatus(err)` / `FromStatus(st)` / `UnaryServerInterceptor()` / `UnaryClientInterceptor()` / `StreamServerInterceptor()` / `StreamClientInterceptor()` |
 | `integration/otel` | Write errkind fields onto OTel spans | `RecordError(span, err)` / `Attributes(err)` |
 | `integration/zap` | go.uber.org/zap | `Err(err)` / `Object(key, err)` |
 | `integration/zerolog` | rs/zerolog | `Err(err)` / `Field(key, err)` / `Dict(err)` |
@@ -211,6 +211,48 @@ logger.Error().Func(zerologext.Err(err)).Msg("request failed")
 // logrus
 logger.WithFields(logrusext.Fields(err)).Error("request failed")
 ```
+
+## Tooling
+
+errkind ships two CLIs to keep error codes consistent across teams.
+
+### `cmd/errkindlint` — static collision check
+
+`Define` panics on duplicate `(code, name)` at process init. `errkindlint` brings
+that check forward to compile time by statically scanning `errkind.Define(...)`
+literal calls across the whole repo (and across multiple `go.mod` boundaries).
+
+```bash
+go run github.com/im-wmkong/errkind/cmd/errkindlint -exclude=examples/ .
+```
+
+- Reports duplicate `code`, duplicate `name`, and empty `name`
+- Exit code is non-zero on findings, ready for CI gating
+- `-exclude=glob` skips files (e.g. independent demo programs that intentionally reuse codes)
+- Accepts Go-style `./...` paths
+
+### `cmd/errkind doc` — error code documentation
+
+Generates a stable error-code catalogue from source — useful for frontend
+copywriters, SRE alert configs, and client codegen.
+
+```bash
+go run github.com/im-wmkong/errkind/cmd/errkind doc -format=md  ./...
+go run github.com/im-wmkong/errkind/cmd/errkind doc -format=json ./...
+go run github.com/im-wmkong/errkind/cmd/errkind doc -format=md -o errors.md ./...
+```
+
+Markdown output (excerpt):
+
+```
+| Code  | Name             | Default Message | Source                |
+|------:|------------------|-----------------|-----------------------|
+| 10001 | `user_not_found` | 用户不存在       | user/errors.go:12     |
+| 10002 | `invalid_argument` | 参数非法       | user/errors.go:18     |
+```
+
+Both tools share `internal/scan` (AST-only, no `init` execution required), so
+they work even on code that fails to compile or has heavy framework deps.
 
 ## Comparison with Other Libraries
 
@@ -251,6 +293,21 @@ Apple M-series, Go 1.23, `go test -bench=. -benchtime=2s`:
 | `json.Marshal(err)` | 817 | 448 | 15 |
 
 Run on your own box: `go test -bench=. -benchmem ./...`
+
+## Development
+
+The repo is a multi-module Go workspace (main module + each `integration/*`
+under its own `go.mod`). `go test ./...` does **not** cross module boundaries,
+so use the bundled script to mirror CI locally:
+
+```bash
+./scripts/test.sh             # vet / build / test for every module
+./scripts/test.sh -race       # extra args are forwarded to `go test`
+./scripts/test.sh --group     # GitHub Actions ::group:: markers (used by CI)
+```
+
+The same script is the single source of truth for the CI test job — anything
+green locally is green on CI for those steps.
 
 ## Known Behavior Notes
 
