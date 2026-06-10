@@ -43,7 +43,16 @@ func (e *kerr) Error() string {
 func (e *kerr) Unwrap() error   { return e.cause }
 func (e *kerr) Kind() *Kind     { return e.kind }
 func (e *kerr) Message() string { return e.message }
-func (e *kerr) Attrs() []Attr   { return e.attrs }
+
+// Attrs 返回 attrs 的浅拷贝; 调用方可安全修改, 不会影响原错误。
+//
+// 与 AttrsOf 的约定一致——对外暴露 attrs 时一律拷贝, 避免内部状态被篡改。
+func (e *kerr) Attrs() []Attr {
+	if len(e.attrs) == 0 {
+		return nil
+	}
+	return append([]Attr(nil), e.attrs...)
+}
 
 // StackTrace 返回延迟解析后的调用栈; 没抓栈时返回 nil。
 func (e *kerr) StackTrace() []Frame {
