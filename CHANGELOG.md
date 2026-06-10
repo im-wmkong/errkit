@@ -4,6 +4,8 @@
 
 ## [Unreleased]
 
+## [0.1.4] - 2026-06-10
+
 ### Changed
 
 #### BREAKING — toolchain 版本基线上调
@@ -152,7 +154,8 @@
 - ~~暂未提供错误码冲突的静态检查工具 (规划在 v0.x)~~ — 已在 Unreleased 提供 `cmd/errkindlint`
 - 暂未提供 i18n / metrics 自动发射 (规划在 v0.x)
 
-[Unreleased]: https://github.com/im-wmkong/errkind/compare/v0.1.3...HEAD
+[Unreleased]: https://github.com/im-wmkong/errkind/compare/v0.1.4...HEAD
+[0.1.4]: https://github.com/im-wmkong/errkind/compare/v0.1.3...v0.1.4
 [0.1.3]: https://github.com/im-wmkong/errkind/compare/v0.1.2...v0.1.3
 [0.1.2]: https://github.com/im-wmkong/errkind/compare/v0.1.1...v0.1.2
 [0.1.1]: https://github.com/im-wmkong/errkind/compare/v0.1.0...v0.1.1
