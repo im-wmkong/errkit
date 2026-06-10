@@ -4,7 +4,7 @@
 [![CI](https://github.com/im-wmkong/errkind/actions/workflows/ci.yml/badge.svg)](https://github.com/im-wmkong/errkind/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
-> A **business error modeling library** for Go 1.24+ — the core is a *domain model* of errors (Kind / instance separation, zero deps).
+> A **business error modeling library** for Go 1.24+ — the core is a *domain model* of errors (Kind / instance separation, zero deps).<br>
 > Protocol adapters (HTTP / gRPC / OTel) and logger integrations (zap / zerolog / logrus) live in the `ext/` decorators and `integration/*` submodules, each opted into on demand.
 
 [简体中文](README_CN.md) | English
